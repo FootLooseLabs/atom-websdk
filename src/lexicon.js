@@ -1,4 +1,6 @@
-class WebMessage extends Muffin.Lexeme {
+const LEXICON = {};
+
+LEXICON.WebMessage = class extends Muffin.Lexeme {
     static name = "";
 
     static request_schema = {
@@ -17,4 +19,4 @@ class WebMessage extends Muffin.Lexeme {
     }
 }
 
-export default WebMessage
+export default LEXICON;
