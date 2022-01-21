@@ -110,6 +110,7 @@ Muffin.WebRequestSdk = class {
     }
 
     _getLexeme(_lexemeLabel) {
+        console.debug("###lexicon", this.LEXICON);
         return this.LEXICON[_lexemeLabel];
     }
 
@@ -173,13 +174,15 @@ Muffin.WebRequestSdk = class {
             this.eventInterface.on("incoming-msg", (msg) => {
                 if (msg.op === _opLabel && msg.result != null) {
                     return resolve(msg);
+                }else{
+                    return reject(msg);
                 }
             });
             this.eventInterface.on("error", (msg) => {
                 return reject(msg)
             });
             setTimeout(() => {
-                return reject({message:`No response received in ${this.MAX_RESPONSE_TIME / 1000}s`})
+                return reject({message:`No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
             }, options.MAX_RESPONSE_TIME);
         });
     }
