@@ -17,7 +17,7 @@ const config = {
 }
 
 
-export default class WebRequestSdk {
+Muffin.WebRequestSdk = class {
 
     constructor(options, lazyload = true) {
         console.debug("##ConnectMethod constructor", options);
@@ -255,3 +255,5 @@ export default class WebRequestSdk {
 
     }
 }
+
+export default Muffin;
