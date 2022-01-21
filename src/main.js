@@ -19,7 +19,8 @@ const config = {
 
 export default class WebRequestSdk {
 
-    constructor() {
+    constructor(options, lazyload = true) {
+        console.debug("##ConnectMethod constructor", options);
         this.eventInterface = PostOffice.getOrCreateInterface("WebRequestSdk")
         this.LEXICON = API_LEXICON;
         this.uid = "";
@@ -37,6 +38,7 @@ export default class WebRequestSdk {
     }
 
     async connect() {
+        console.debug("##ConnectMethod connect", this.options);
         this.uiVars.eventSubscriptions = new Set([]);
         this.uiVars.eventCounters = {};
         return new Promise((resolve, reject) => {

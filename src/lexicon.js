@@ -1,5 +1,5 @@
-export default class WebMessage extends Muffin.Lexeme {
-    static DOC_STRING = "WebMessage Lexeme";
+class WebMessage extends Muffin.Lexeme {
+    static name = "";
 
     static request_schema = {
         uid: null,
@@ -16,3 +16,5 @@ export default class WebMessage extends Muffin.Lexeme {
         subscribe: null,
     }
 }
+
+export default WebMessage
