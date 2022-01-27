@@ -174,8 +174,6 @@ Muffin.WebRequestSdk = class {
             this.eventInterface.on("incoming-msg", (msg) => {
                 if (msg.op === _opLabel && msg.result != null) {
                     return resolve(msg);
-                }else{
-                    return reject(msg);
                 }
             });
             this.eventInterface.on("error", (msg) => {
