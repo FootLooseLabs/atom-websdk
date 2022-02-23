@@ -40,8 +40,7 @@
     "watch": "^1.0.2"
   },
   "dependencies": {
-    "aws-sdk": "^2.1010.0",
     "gulp-header-comment": "^0.10.0",
-    "muffin": "git+https://github.com/FootLooseLabs/element"
+    "element": "git+https://github.com/FootLooseLabs/element"
   }
 }
