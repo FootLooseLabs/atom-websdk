@@ -176,6 +176,12 @@ Muffin.WebRequestSdk = class {
                     return resolve(msg);
                 }
             });
+
+            this.eventInterface.on("incoming-event", (msg)=>{
+                if (msg.op === _opLabel && msg.result != null){
+                    return resolve(msg);
+                }
+            })
             this.eventInterface.on("error", (msg) => {
                 return reject(msg)
             });

@@ -41,6 +41,6 @@
   },
   "dependencies": {
     "gulp-header-comment": "^0.10.0",
-    "element": "git+https://github.com/FootLooseLabs/element"
+    "muffin": "git+https://github.com/FootLooseLabs/element"
   }
 }
