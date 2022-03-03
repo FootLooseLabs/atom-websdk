@@ -174,7 +174,7 @@ Muffin.WebRequestSdk = class {
                 }
             })
             this.eventInterface.on("error", (msg) => {
-                if (msg.op === _opLabel && msg.result != null) {
+                if (msg.op === _opLabel && msg.error != null) {
                     return reject(msg)
                 }
             });
