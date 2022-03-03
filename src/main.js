@@ -20,7 +20,6 @@ const config = {
 Muffin.WebRequestSdk = class {
 
     constructor(options, lazyload = true) {
-        console.debug("##ConnectMethod constructor", options);
         this.eventInterface = PostOffice.getOrCreateInterface("WebRequestSdk")
         this.LEXICON = API_LEXICON;
         this.uid = "";
@@ -38,19 +37,15 @@ Muffin.WebRequestSdk = class {
     }
 
     async connect() {
-        console.debug("##ConnectMethod connect", this.options);
         this.uiVars.eventSubscriptions = new Set([]);
         this.uiVars.eventCounters = {};
         return new Promise((resolve, reject) => {
             var finalUrl = this.uiVars.config.api_protocol + this.uiVars.config.hostName + "/" + this.uiVars.config.path + "/" + this.clientId + "?auth=" + this.token
-            console.debug("imp:", finalUrl);
-            console.debug("imp:", this.uiVars.config);
             this._connection = Muffin.PostOffice.addSocket(WebSocket, this.label, finalUrl);
             this._connection.autoRetryOnClose = false;
 
             this._connection.socket.onerror = (e) => {
                 let msg = `connection failed: ${e.message}`;
-                console.debug("imp:", msg);
                 this.state = e;
                 this.eventInterface.dispatchMessage("error", e);
                 return reject({state: this.state, msg: msg});
@@ -73,7 +68,6 @@ Muffin.WebRequestSdk = class {
                 var _msgStr = e.data;
                 try {
                     var _msg = JSON.parse(_msgStr)
-                    console.debug("##on message ", _msg);
                     if (_msg.error) {
                         this.eventInterface.dispatchMessage("error", _msg)
                     } else {
@@ -86,7 +80,6 @@ Muffin.WebRequestSdk = class {
                         }
                     }
                 } catch (e) {
-                    console.debug("## error", e);
                     this.eventInterface.dispatchMessage("error", e)
                 }
             }
@@ -110,7 +103,6 @@ Muffin.WebRequestSdk = class {
     }
 
     _getLexeme(_lexemeLabel) {
-        console.debug("###lexicon", this.LEXICON);
         return this.LEXICON[_lexemeLabel];
     }
 
@@ -126,9 +118,8 @@ Muffin.WebRequestSdk = class {
             return;
         }
 
-        console.debug("Generating fixtures for lexeme - ", _selectedLexeme);
 
-        if (_msg == "random") {
+        if (_msg === "random") {
             try {
                 var _selectedLexemeInflection = _selectedLexeme.inflect({});
                 _selectedLexemeInflection.genFixtures();
@@ -183,7 +174,9 @@ Muffin.WebRequestSdk = class {
                 }
             })
             this.eventInterface.on("error", (msg) => {
-                return reject(msg)
+                if (msg.op === _opLabel && msg.result != null) {
+                    return reject(msg)
+                }
             });
             setTimeout(() => {
                 return reject({message:`No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
@@ -241,7 +234,6 @@ Muffin.WebRequestSdk = class {
         }
 
         this._connection.on("incoming-hostagent-response-msg", (msg) => {
-            console.debug("Event:", " incoming-hostagent-response-msg = ", msg);
             // this.uiVars.hostagentResponseMsgLogEl.appendChild(tableHtml);
             if (msg.op.includes("|||") && msg.statusCode == 2) {
                 this._createEventSubscription(msg.op);
@@ -252,7 +244,6 @@ Muffin.WebRequestSdk = class {
 
 
         this._connection.on("incoming-hostagent-event-msg", (msg) => {
-            console.debug("Event:", " incoming-hostagent-event-msg = ", msg);
             this.uiVars.eventCounters[msg.op] += 1;
             // this.uiVars.hostagentResponseMsgLogEl.appendChild(tableHtml);
         });
