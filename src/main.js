@@ -168,11 +168,6 @@ Muffin.WebRequestSdk = class {
                 }
             });
 
-            this.eventInterface.on("incoming-event", (msg)=>{
-                if (msg.op === _opLabel && msg.result != null){
-                    return resolve(msg);
-                }
-            })
             this.eventInterface.on("error", (msg) => {
                 if (msg.op === _opLabel && msg.error != null) {
                     return reject(msg)
@@ -182,6 +177,26 @@ Muffin.WebRequestSdk = class {
                 return reject({message:`No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
             }, options.MAX_RESPONSE_TIME);
         });
+    }
+
+    subscribeToEvent(){
+        let callbackList = [];
+        var _this = this;
+        const notifier = {
+            notify: function(callbackFunction, _lexemeLabel, _msg, _opLabel) {
+                _this.communicate(_lexemeLabel, _msg);
+                callbackList.push({callbackFunction, _opLabel});
+                console.debug("***************** Callback Event Table ************************")
+                console.table(callbackList);
+            }
+        };
+        this.eventInterface.on("incoming-event", (msg)=>{
+            for (let cb of callbackList) {
+                if(msg.op === cb._opLabel)
+                    cb.callbackFunction(msg);
+            }
+        })
+        return notifier;
     }
 
     _createEventSubscription(_msg) {
