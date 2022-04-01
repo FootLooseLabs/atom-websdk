@@ -9,7 +9,7 @@ const config = {
         api_protocol: "ws://"
     },
     sandbox: {
-        hostName: "sandbox.autostore-sdk.drona.footloose.io",
+        hostName: "wsapi.footloose.io/",
         path: "wsapi",
         channelInstanceSig: 12,
         api_protocol: "wss://"
