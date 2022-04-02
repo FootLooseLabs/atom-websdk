@@ -106,7 +106,7 @@ Muffin.WebRequestSdk = class {
         return this.LEXICON[_lexemeLabel];
     }
 
-    _inflectLexeme(_lexemeLabel, _msg) {
+    _findAndInflectLexeme(_lexemeLabel, _msg) {
         if (!_lexemeLabel || !_msg) {
             console.error("Error:", "Invalid Request.");
             return;
@@ -147,7 +147,7 @@ Muffin.WebRequestSdk = class {
         // 	console.error("Error:", msg);
         // 	return;
         // }
-        let inflection = this._inflectLexeme(_lexemeLabel, _msg);
+        let inflection = this._findAndInflectLexeme(_lexemeLabel, _msg);
         if (!inflection) {
             return;
         }
@@ -177,6 +177,58 @@ Muffin.WebRequestSdk = class {
                 return reject({message:`No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
             }, options.MAX_RESPONSE_TIME);
         });
+    }
+
+    async webrequest(_interface, _requestMsg, options = {MAX_RESPONSE_TIME: 5000}) {
+        return new Promise((resolve, reject) => {
+            if(!_interface){
+                return reject({error: "No Interface provided."});
+            }
+
+            if(!_interface.includes(":::") && !_interface.includes(":::")){
+                return reject({error: "Interface provided is not valid."}); 
+            }
+
+            var _opLabel = options.opLabel || _interface;
+
+            if(_interface.includes(":::")){
+                var _webMsg = {
+                    "interface" : _interface,
+                    "request" : _requestMsg,
+                    "token": this._generateToken(_interface);
+                }
+            } else {
+                var _webMsg = {
+                    "subscribe" : _interface,
+                    "token": this._generateToken(_interface);
+                }
+            }
+
+            this.communicate("WebMessage", _webMsg);
+
+            this.eventInterface.on("incoming-msg", (msg) => {
+                if (msg.op === _opLabel && msg.result != null) {
+                    return resolve(msg);
+                }
+            });
+
+            this.eventInterface.on("error", (msg) => {
+                if (msg.op === _opLabel && msg.error != null) {
+                    return reject(msg)
+                }
+            });
+            setTimeout(() => {
+                return reject({message:`No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
+            }, options.MAX_RESPONSE_TIME);
+        });
+    }
+
+    async _generateToken(message, options = {algo: "SHA-256"}) {
+        const msgBuffer = new TextEncoder().encode(message);                    
+        const hashBuffer = await crypto.subtle.digest(options.algo, msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
     }
 
     subscribeToEvent(){
