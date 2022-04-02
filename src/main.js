@@ -185,7 +185,7 @@ Muffin.WebRequestSdk = class {
                 return reject({error: "No Interface provided."});
             }
 
-            if(!_interface.includes(":::") && !_interface.includes(":::")){
+            if(!_interface.includes(":::") && !_interface.includes("|||")){
                 return reject({error: "Interface provided is not valid."}); 
             }
 
@@ -195,12 +195,12 @@ Muffin.WebRequestSdk = class {
                 var _webMsg = {
                     "interface" : _interface,
                     "request" : _requestMsg,
-                    "token": this._generateToken(_interface);
+                    "token": this._generateToken(_interface)
                 }
             } else {
                 var _webMsg = {
                     "subscribe" : _interface,
-                    "token": this._generateToken(_interface);
+                    "token": this._generateToken(_interface)
                 }
             }
 
