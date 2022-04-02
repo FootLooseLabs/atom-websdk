@@ -1,4 +1,5 @@
 import WEB_MESSAGE_LEXICON from "./lexicon";
+
 const API_LEXICON = {...{}, ...WEB_MESSAGE_LEXICON};
 
 const config = {
@@ -186,7 +187,7 @@ Muffin.WebRequestSdk = class {
             }
 
             if(!_interface.includes(":::") && !_interface.includes("|||")){
-                return reject({error: "Interface provided is not valid."}); 
+                return reject({error: "Invalid Interface provided"});
             }
 
             var _opLabel = options.opLabel || _interface;
@@ -227,8 +228,7 @@ Muffin.WebRequestSdk = class {
         const msgBuffer = new TextEncoder().encode(message);                    
         const hashBuffer = await crypto.subtle.digest(options.algo, msgBuffer);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
     subscribeToEvent(){
