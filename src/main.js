@@ -192,13 +192,17 @@ Muffin.WebRequestSdk = class {
 
             var _opLabel = options.opLabel || _interface;
 
+            var _interfaceType;
+
             if(_interface.includes(":::")){
+                _interfaceType = "receptive";
                 var _webMsg = {
                     "interface" : _interface,
                     "request" : _requestMsg,
                     "token": this._generateToken(_interface)
                 }
             } else {
+                _interfaceType = "expressive";
                 var _webMsg = {
                     "subscribe" : _interface,
                     "token": this._generateToken(_interface)
@@ -208,8 +212,14 @@ Muffin.WebRequestSdk = class {
             this.communicate("WebMessage", _webMsg);
 
             this.eventInterface.on("incoming-msg", (msg) => {
-                if (msg.op === _opLabel && msg.result != null) {
-                    return resolve(msg);
+                if(_interfaceType == "receptive"){
+                    if (msg.op === _opLabel && msg.result != null) {
+                        return resolve(msg);
+                    }
+                }else if(_interfaceType == "expressive"){
+                    if(msg.op == _opLabel && msg.statusCode == 2){
+                        return resolve(msg);
+                    }
                 }
             });
 
