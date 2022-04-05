@@ -225,7 +225,7 @@ Muffin.WebRequestSdk = class {
     }
 
     async websubscribe(_interface, _po="global", options = {MAX_RESPONSE_TIME: 5000}) {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
             try{
                 await this.webrequest(_interface)
             }catch(e){
