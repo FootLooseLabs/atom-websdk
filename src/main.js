@@ -224,6 +224,26 @@ Muffin.WebRequestSdk = class {
         });
     }
 
+    async websubscribe(_interface, _po="global", options = {MAX_RESPONSE_TIME: 5000}) {
+        return new Promise((resolve, reject) => {
+            try{
+                await this.webrequest(_interface)
+            }catch(e){
+                return reject(e);
+            }
+
+            var _localSocket = Muffin.PostOffice.sockets[_po] || Muffin.PostOffice.sockets.global;
+
+            this.eventInterface.on("incoming-event", (msg) => {
+                if (msg.op === `EVENT:::${_interface}`) {
+                    _localSocket.dispatchMessage(msg)
+                }
+            });
+
+            return resolve(true);
+        });
+    }
+
     async _generateToken(message, options = {algo: "SHA-256"}) {
         const msgBuffer = new TextEncoder().encode(message);                    
         const hashBuffer = await crypto.subtle.digest(options.algo, msgBuffer);
