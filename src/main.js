@@ -224,7 +224,7 @@ Muffin.WebRequestSdk = class {
         });
     }
 
-    async websubscribe(_interface, _po="global", options = {MAX_RESPONSE_TIME: 5000}) {
+    async websubscribe(_interface, _localSocketName="global", _targetMsgLabel, options = {MAX_RESPONSE_TIME: 5000}) {
         return new Promise(async (resolve, reject) => {
             try{
                 await this.webrequest(_interface)
@@ -232,11 +232,12 @@ Muffin.WebRequestSdk = class {
                 return reject(e);
             }
 
-            var _localSocket = Muffin.PostOffice.sockets[_po] || Muffin.PostOffice.sockets.global;
+            var _localSocket = Muffin.PostOffice.sockets[_localSocketName] || Muffin.PostOffice.sockets.global;
 
             this.eventInterface.on("incoming-event", (msg) => {
                 if (msg.op === `EVENT:::${_interface}`) {
-                    _localSocket.dispatchMessage(msg)
+                    let _msgLabel = _targetMsgLabel || msg.op;
+                    _localSocket.dispatchMessage(_msgLabel, msg);
                 }
             });
 
