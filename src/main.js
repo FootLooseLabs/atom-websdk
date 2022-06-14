@@ -27,6 +27,7 @@ Muffin.WebRequestSdk = class {
         this.label = options.label || "drona_store_sdk_client";
         this.clientId = options.client_id || "";
         this.token = options.token || "";
+        this.keepAliveTimeout = options.keepAliveTimeout || 60000;
         this.pass = "";
         this.connectedStores = [];
         this.uiVars = {
@@ -50,6 +51,7 @@ Muffin.WebRequestSdk = class {
                 let msg = `connection failed: ${e.message}`;
                 this.state = e;
                 this.eventInterface.dispatchMessage("error", e);
+                this.cancelKeepAlive();
                 return reject({state: this.state, msg: msg});
             }
             this._connection.socket.onopen = (e) => {
@@ -64,6 +66,7 @@ Muffin.WebRequestSdk = class {
                 let msg = `connection closed`;
                 this.state = e;
                 this.eventInterface.dispatchMessage("close", e);
+                this.cancelKeepAlive();
                 return reject({state: this.state, msg: msg});
             }
 
@@ -91,12 +94,16 @@ Muffin.WebRequestSdk = class {
 
 
     _keepAlive() {
-        if (this._connectionAlive) {
-            clearInterval(this._connectionKeepAlive);
-        }
-        this._connectionKeepAlive = setInterval(() => {
+        this.cancelKeepAlive();
+        this._connectionAlive = setInterval(() => {
             this._connection.send("ping");
-        }, 1000);
+        }, this.keepAliveTimeout);
+    }
+
+    cancelKeepAlive() {
+        if (this._connectionAlive) {
+            clearInterval(this._connectionAlive);
+        }
     }
 
     getSerializableIntro() {
