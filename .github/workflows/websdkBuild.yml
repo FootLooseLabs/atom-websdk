@@ -1,6 +1,7 @@
 name: NodeJS web SDK build
 
 on:
+  workflow_dispatch:
   push:
     branches: [ master ]
   pull_request:
@@ -12,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [12.x, 14.x, 16.x]
+        node-version: [12.x]
     
     steps:
     - uses: actions/checkout@v3
@@ -25,7 +26,7 @@ jobs:
     - name: Build
       run: |
         npm install
-        npm build
+        npm run build
     
     - name: Deploy
       run: |

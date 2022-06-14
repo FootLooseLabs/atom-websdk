@@ -203,13 +203,17 @@ Muffin.WebRequestSdk = class {
 
             var _opLabel = options.opLabel || _interface;
 
+            var _interfaceType;
+
             if (_interface.includes(":::")) {
+                _interfaceType = "receptive";
                 var _webMsg = {
                     "interface": _interface,
                     "request": _requestMsg,
                     "token": this._generateToken(_interface)
                 }
             } else {
+                _interfaceType = "expressive";
                 var _webMsg = {
                     "subscribe": _interface,
                     "token": this._generateToken(_interface)
@@ -219,8 +223,14 @@ Muffin.WebRequestSdk = class {
             this.communicate("WebMessage", _webMsg);
 
             this.eventInterface.on("incoming-msg", (msg) => {
-                if (msg.op === _opLabel && msg.result != null) {
-                    return resolve(msg);
+                if(_interfaceType == "receptive"){
+                    if (msg.op === _opLabel && msg.result != null) {
+                        return resolve(msg);
+                    }
+                }else if(_interfaceType == "expressive"){
+                    if(msg.op == _opLabel && msg.statusCode == 2){
+                        return resolve(msg);
+                    }
                 }
             });
 
@@ -232,6 +242,27 @@ Muffin.WebRequestSdk = class {
             setTimeout(() => {
                 return reject({message: `No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
             }, options.MAX_RESPONSE_TIME);
+        });
+    }
+
+    async websubscribe(_interface, _localSocketName="global", _targetMsgLabel, options = {MAX_RESPONSE_TIME: 5000}) {
+        return new Promise(async (resolve, reject) => {
+            try{
+                await this.webrequest(_interface)
+            }catch(e){
+                return reject(e);
+            }
+
+            var _localSocket = Muffin.PostOffice.sockets[_localSocketName] || Muffin.PostOffice.sockets.global;
+
+            this.eventInterface.on("incoming-event", (msg) => {
+                if (msg.op === `EVENT:::${_interface}`) {
+                    let _msgLabel = _targetMsgLabel || msg.op;
+                    _localSocket.dispatchMessage(_msgLabel, msg);
+                }
+            });
+
+            return resolve(true);
         });
     }
 
