@@ -35,6 +35,7 @@ Muffin.WebRequestSdk = class {
         }
         this._connection = null;
         this.state = null;
+        this._connectionAlive = null;
     }
 
     async connect() {
@@ -55,6 +56,7 @@ Muffin.WebRequestSdk = class {
                 let msg = `connection established`;
                 this.state = e;
                 this.eventInterface.dispatchMessage("connect");
+                this._keepAlive();
                 return resolve({state: this.state, msg: msg});
             }
 
@@ -87,6 +89,15 @@ Muffin.WebRequestSdk = class {
         })
     }
 
+
+    _keepAlive() {
+        if (this._connectionAlive) {
+            clearInterval(this._connectionKeepAlive);
+        }
+        this._connectionKeepAlive = setInterval(() => {
+            this._connection.send("ping");
+        }, 1000);
+    }
 
     getSerializableIntro() {
         return Object.keys(this.LEXICON).map((_lexeme) => {
@@ -159,7 +170,7 @@ Muffin.WebRequestSdk = class {
     async request(_lexemeLabel, _msg, _opLabel, options = {MAX_RESPONSE_TIME: 5000}) {
         return new Promise((resolve, reject) => {
             this.communicate(_lexemeLabel, _msg);
-            if(!_opLabel){
+            if (!_opLabel) {
                 return resolve({message: "Message sent. No resp_op provided."});
             }
 
@@ -175,32 +186,32 @@ Muffin.WebRequestSdk = class {
                 }
             });
             setTimeout(() => {
-                return reject({message:`No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
+                return reject({message: `No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
             }, options.MAX_RESPONSE_TIME);
         });
     }
 
     async webrequest(_interface, _requestMsg, options = {MAX_RESPONSE_TIME: 5000}) {
         return new Promise((resolve, reject) => {
-            if(!_interface){
+            if (!_interface) {
                 return reject({error: "No Interface provided."});
             }
 
-            if(!_interface.includes(":::") && !_interface.includes("|||")){
+            if (!_interface.includes(":::") && !_interface.includes("|||")) {
                 return reject({error: "Invalid Interface provided"});
             }
 
             var _opLabel = options.opLabel || _interface;
 
-            if(_interface.includes(":::")){
+            if (_interface.includes(":::")) {
                 var _webMsg = {
-                    "interface" : _interface,
-                    "request" : _requestMsg,
+                    "interface": _interface,
+                    "request": _requestMsg,
                     "token": this._generateToken(_interface)
                 }
             } else {
                 var _webMsg = {
-                    "subscribe" : _interface,
+                    "subscribe": _interface,
                     "token": this._generateToken(_interface)
                 }
             }
@@ -219,32 +230,32 @@ Muffin.WebRequestSdk = class {
                 }
             });
             setTimeout(() => {
-                return reject({message:`No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
+                return reject({message: `No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
             }, options.MAX_RESPONSE_TIME);
         });
     }
 
     async _generateToken(message, options = {algo: "SHA-256"}) {
-        const msgBuffer = new TextEncoder().encode(message);                    
+        const msgBuffer = new TextEncoder().encode(message);
         const hashBuffer = await crypto.subtle.digest(options.algo, msgBuffer);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    subscribeToEvent(){
+    subscribeToEvent() {
         let callbackList = [];
         var _this = this;
         const notifier = {
-            notify: function(callbackFunction, _lexemeLabel, _msg, _opLabel) {
+            notify: function (callbackFunction, _lexemeLabel, _msg, _opLabel) {
                 _this.communicate(_lexemeLabel, _msg);
                 callbackList.push({callbackFunction, _opLabel});
                 console.debug("***************** Callback Event Table ************************")
                 console.table(callbackList);
             }
         };
-        this.eventInterface.on("incoming-event", (msg)=>{
+        this.eventInterface.on("incoming-event", (msg) => {
             for (let cb of callbackList) {
-                if(msg.op === cb._opLabel)
+                if (msg.op === cb._opLabel)
                     cb.callbackFunction(msg);
             }
         })
