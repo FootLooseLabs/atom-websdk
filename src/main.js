@@ -72,6 +72,9 @@ Muffin.WebRequestSdk = class {
 
             this._connection.socket.onmessage = (e) => {
                 var _msgStr = e.data;
+                if(e.data === 'pong'){
+                    return;
+                }
                 try {
                     var _msg = JSON.parse(_msgStr)
                     if (_msg.error) {
