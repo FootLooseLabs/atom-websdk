@@ -23,13 +23,10 @@ Muffin.WebRequestSdk = class {
     constructor(options, lazyload = true) {
         this.eventInterface = PostOffice.getOrCreateInterface("WebRequestSdk")
         this.LEXICON = API_LEXICON;
-        this.uid = "";
         this.label = options.label || "drona_store_sdk_client";
         this.clientId = options.client_id || "";
         this.token = options.token || "";
         this.keepAliveTimeout = options.keepAliveTimeout || 60000;
-        this.pass = "";
-        this.connectedStores = [];
         this.uiVars = {
             clock: {},
             config: config[options.label]
@@ -37,54 +34,67 @@ Muffin.WebRequestSdk = class {
         this._connection = null;
         this.state = null;
         this._connectionAlive = null;
+        this._socketState = 0; // 0- not connected, 1- connected, 2- connecting
     }
 
     async connect() {
         this.uiVars.eventSubscriptions = new Set([]);
         this.uiVars.eventCounters = {};
+        this._socketState = 2;
         return new Promise((resolve, reject) => {
             var finalUrl = this.uiVars.config.api_protocol + this.uiVars.config.hostName + "/" + this.uiVars.config.path + "/" + this.clientId + "?auth=" + this.token
             this._connection = Muffin.PostOffice.addSocket(WebSocket, this.label, finalUrl);
             this._connection.autoRetryOnClose = false;
 
-            this._connection.socket.onerror = (e) => {
-                let msg = `connection failed: ${e.message}`;
-                this.state = e;
-                this.eventInterface.dispatchMessage("error", e);
+            this._connection.socket.onerror = (event) => {
+                var target = event.target;
+                var message;
+                if (target && target.readyState === 3) {
+                    message = "Connection is Closed or Could not be established";
+                } else {
+                    message = "Connection Failed";
+                }
+                console.error("ERROR: WS-Sdk onError:", event, message);
+                this.state = event;
+                this.eventInterface.dispatchMessage("error", new Error(message));
                 this.cancelKeepAlive();
-                return reject({state: this.state, msg: msg});
+                this._socketState = 0;
+                return reject({state: this._socketState, msg: message});
             }
             this._connection.socket.onopen = (e) => {
                 let msg = `connection established`;
                 this.state = e;
                 this.eventInterface.dispatchMessage("connect");
                 this._keepAlive();
-                return resolve({state: this.state, msg: msg});
+                this._socketState = 1;
+                return resolve({state: this._socketState, msg: msg});
             }
 
-            this._connection.socket.onclose = (e) => {
-                let msg = `connection closed`;
-                this.state = e;
-                this.eventInterface.dispatchMessage("close", e);
+            this._connection.socket.onclose = (event) => {
+                let msg = `Connection Closed By server or Network lost`;
+                console.error("ERROR: WS-Sdk onClose:", event, msg);
+                this.state = event;
+                this.eventInterface.dispatchMessage("close", new Error(msg));
                 this.cancelKeepAlive();
-                return reject({state: this.state, msg: msg});
+                this._socketState = 0;
             }
 
             this._connection.socket.onmessage = (e) => {
                 var _msgStr = e.data;
-                if(e.data === 'pong'){
+                if (e.data === 'pong') {
                     return;
                 }
                 try {
                     var _msg = JSON.parse(_msgStr)
                     if (_msg.error) {
-                        this.eventInterface.dispatchMessage("error", _msg)
+                        this.eventInterface.dispatchMessage("agent-error", _msg)
                     } else {
                         // this.eventInterface.dispatchMessage("incoming-msg", [_msg]);
                         this.eventInterface.dispatchMessage("incoming-msg", _msg)
                         if (_msg.op.includes("EVENT:::")) {
                             this.eventInterface.dispatchMessage("incoming-event", _msg);
                         } else {
+                            console.debug("incoming-msg", _msg);
                             this.eventInterface.dispatchMessage("incoming-response", _msg);
                         }
                     }
@@ -162,42 +172,44 @@ Muffin.WebRequestSdk = class {
     }
 
     communicate(_lexemeLabel, _msg) {
-        // try{
-        // 	JSON.parse(_msg);
-        // }catch(e){
-        // 	let msg = "invalid json payload";
-        // 	console.error("Error:", msg);
-        // 	return;
-        // }
         let inflection = this._findAndInflectLexeme(_lexemeLabel, _msg);
         if (!inflection) {
             return;
         }
         this.uiVars.clock.testStart = Date.now() / 1000;
-        this._connection.send(inflection);
+        if (this._socketState === 1) {
+            this._connection.send(inflection);
+        } else {
+            console.error("ERROR: WS-Sdk communicate:", "Socket is not connected");
+        }
     }
 
     async request(_lexemeLabel, _msg, _opLabel, options = {MAX_RESPONSE_TIME: 5000}) {
         return new Promise((resolve, reject) => {
-            this.communicate(_lexemeLabel, _msg);
-            if (!_opLabel) {
-                return resolve({message: "Message sent. No resp_op provided."});
-            }
-
-            this.eventInterface.on("incoming-msg", (msg) => {
-                if (msg.op === _opLabel && msg.result != null) {
-                    return resolve(msg);
+            this.waitForSocketConnection(async () => {
+                if (this._socketState !== 1) {
+                    return reject({message: "Socket is not connected"});
                 }
-            });
-
-            this.eventInterface.on("error", (msg) => {
-                if (msg.op === _opLabel && msg.error != null) {
-                    return reject(msg)
+                this.communicate(_lexemeLabel, _msg);
+                if (!_opLabel) {
+                    return resolve({message: "Message sent. No resp_op provided."});
                 }
-            });
-            setTimeout(() => {
-                return reject({message: `No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
-            }, options.MAX_RESPONSE_TIME);
+
+                this.eventInterface.on("incoming-msg", (msg) => {
+                    if (msg.op === _opLabel && msg.result != null) {
+                        return resolve(msg);
+                    }
+                });
+
+                this.eventInterface.on("agent-error", (msg) => {
+                    if (msg.op === _opLabel && msg.error != null) {
+                        return reject(msg)
+                    }
+                });
+                setTimeout(() => {
+                    return reject({message: `No response received in ${options.MAX_RESPONSE_TIME / 1000}s`})
+                }, options.MAX_RESPONSE_TIME);
+            })
         });
     }
 
@@ -233,12 +245,12 @@ Muffin.WebRequestSdk = class {
             this.communicate("WebMessage", _webMsg);
 
             this.eventInterface.on("incoming-msg", (msg) => {
-                if(_interfaceType == "receptive"){
+                if (_interfaceType == "receptive") {
                     if (msg.op === _opLabel && msg.result != null) {
                         return resolve(msg);
                     }
-                }else if(_interfaceType == "expressive"){
-                    if(msg.op == _opLabel && msg.statusCode == 2){
+                } else if (_interfaceType == "expressive") {
+                    if (msg.op == _opLabel && msg.statusCode == 2) {
                         return resolve(msg);
                     }
                 }
@@ -255,11 +267,11 @@ Muffin.WebRequestSdk = class {
         });
     }
 
-    async websubscribe(_interface, _localSocketName="global", _targetMsgLabel, options = {MAX_RESPONSE_TIME: 5000}) {
+    async websubscribe(_interface, _localSocketName = "global", _targetMsgLabel, options = {MAX_RESPONSE_TIME: 5000}) {
         return new Promise(async (resolve, reject) => {
-            try{
+            try {
                 await this.webrequest(_interface)
-            }catch(e){
+            } catch (e) {
                 return reject(e);
             }
 
@@ -274,6 +286,26 @@ Muffin.WebRequestSdk = class {
 
             return resolve(true);
         });
+    }
+
+    waitForSocketConnection(callback) {
+        console.debug("WS-Sdk waitForSocketConnection:", "Waiting for socket connection");
+        setTimeout(async () => {
+            if (this._socketState === 1) {
+                if (callback != null) {
+                    callback();
+                }
+            } else if (this._socketState === 0) {
+                try {
+                    await this.connect();
+                } catch (e) {
+                    console.error("WS-Sdk waitForSocketConnection:", e);
+                }
+                this.waitForSocketConnection(callback);
+            } else {
+                this.waitForSocketConnection(callback);
+            }
+        }, 1000)
     }
 
     async _generateToken(message, options = {algo: "SHA-256"}) {
