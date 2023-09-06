@@ -32,9 +32,9 @@ Muffin.WebRequestSdk = class {
         };
 
         if(options.label) {
-            this.uiVars.config = config[options.label]
+            this.uiVars.config = config[options.label];
         } else if(options.config){
-            this.uiVars.config = config[options.config]
+            this.uiVars.config = options.config;
         } else { 
             throw Error("Neither Config-Label Nor Custom-Config Provided");
         }
