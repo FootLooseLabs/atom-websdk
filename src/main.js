@@ -27,7 +27,9 @@ Muffin.WebRequestSdk = class {
         this.clientId = options.client_id || "";
         this.token = options.token || "";
         this.keepAliveTimeout = options.keepAliveTimeout || 60000;
-        this.uiVars.clock = {};
+        this.uiVars = {
+            clock: {}
+        };
 
         if(options.label) {
             this.uiVars.config = config[options.label]
