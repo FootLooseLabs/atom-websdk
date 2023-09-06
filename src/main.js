@@ -23,14 +23,20 @@ Muffin.WebRequestSdk = class {
     constructor(options, lazyload = true) {
         this.eventInterface = PostOffice.getOrCreateInterface("WebRequestSdk")
         this.LEXICON = API_LEXICON;
-        this.label = options.label || "drona_store_sdk_client";
+        this.label = options.name || "sandbox_ws";
         this.clientId = options.client_id || "";
         this.token = options.token || "";
         this.keepAliveTimeout = options.keepAliveTimeout || 60000;
-        this.uiVars = {
-            clock: {},
-            config: config[options.label]
+        this.uiVars.clock = {};
+
+        if(options.label) {
+            this.uiVars.config = config[options.label]
+        } else if(options.config){
+            this.uiVars.config = config[options.config]
+        } else { 
+            throw Error("Neither Config-Label Nor Custom-Config Provided");
         }
+
         this._connection = null;
         this.state = null;
         this._connectionAlive = null;
