@@ -264,7 +264,7 @@ Muffin.WebRequestSdk = class {
                 }
             });
 
-            this.eventInterface.on("error", (msg) => {
+            this.eventInterface.on("agent-error", (msg) => {
                 if (msg.op === _opLabel && msg.error != null) {
                     return reject(msg)
                 }
