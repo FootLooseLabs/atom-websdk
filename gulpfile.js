@@ -35,6 +35,11 @@ var getDestDir = (_dir) => {
 
 gulp.task("buildes6js", run("./node_modules/.bin/rollup -c"));
 
+gulp.task(
+  "buildes6jsMin",
+  run("cross-env NODE_ENV=production ./node_modules/.bin/rollup -c"),
+);
+
 gulp.task("buildJs", function () {
   return gulp
     .src([].concat(getSrcDirs(jsFiles), cmpDistTmpFile))
@@ -73,7 +78,7 @@ sanitise = () => {
 
 gulp.task(
   "buildAll",
-  gulp.series("buildes6js", "buildJs", function done(done) {
+  gulp.series("buildes6jsMin", "buildJs", function done(done) {
     sanitise();
     done();
   }),
