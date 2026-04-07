@@ -240,7 +240,8 @@ Muffin.WebRequestSdk = class {
                 var _webMsg = {
                     "interface": _interface,
                     "request": _requestMsg,
-                    "token": this._generateToken(_interface)
+                    "token": this._generateToken(_interface),
+                    "ttl": options.MAX_RESPONSE_TIME
                 }
             } else {
                 _interfaceType = "expressive";

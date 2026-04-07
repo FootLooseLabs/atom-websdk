@@ -16,6 +16,7 @@ LEXICON.WebMessage = class extends Muffin.Lexeme {
         token: null,
         request: null,
         subscribe: null,
+        ttl: null,
     }
 }
 
