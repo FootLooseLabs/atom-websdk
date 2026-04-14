@@ -11,8 +11,10 @@
       "browser": "./dist/sdk.min.js"
     }
   },
+  "type": "module",
   "scripts": {
-    "build": "rollup -c"
+    "build": "NODE_ENV=production rollup -c",
+    "build:dev": "rollup -c"
   },
   "author": "footloose.io",
   "license": "Copyright © Footloose Labs INC.",

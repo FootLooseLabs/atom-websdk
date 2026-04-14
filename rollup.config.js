@@ -29,6 +29,8 @@ export default [
         output: {
             file: 'dist/sdk.min.js',
             format: 'iife',
+            name: 'AtomWebSDK',
+            exports: 'named',
             banner,
             sourcemap: isProd ? false : 'inline'
         },
