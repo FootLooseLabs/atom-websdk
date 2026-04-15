@@ -75,7 +75,7 @@ function applyDOMExtensions(Muffin) {
         const tabGroup    = srcEl.dataset.tabgroup;
         if (!targetTab || !this._getDomNode()) return;
 
-        const parentControlled = srcEl.hasAttribute("parent-controlled");
+        const parentControlled = srcEl.hasAttribute?.("parent-controlled") ?? false;
 
         let activeToggleEl;
         this._getDomNode()
