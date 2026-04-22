@@ -1,5 +1,5 @@
 /*!
- * @muffin/atom-websdk v3.1.3
+ * @muffin/atom-websdk v3.1.4
  * Footloose Labs — 2026
  * Includes @muffin/element
  */
