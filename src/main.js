@@ -117,6 +117,23 @@ class WebRequestSdk {
         }
     }
 
+    disconnect() {
+        this._cancelKeepAlive();
+        this._socketState = 0;
+        if (this._connection?.socket) {
+            const { socket } = this._connection;
+            // Remove framework handlers first so onclose doesn't trigger a
+            // reconnect or error event after a voluntary disconnect.
+            socket.onclose = null;
+            socket.onerror = null;
+            if (socket.readyState === WebSocket.OPEN ||
+                socket.readyState === WebSocket.CONNECTING) {
+                socket.close(1000, 'Client disconnect');
+            }
+        }
+        this._connection = null;
+    }
+
     // ─── Send ─────────────────────────────────────────────────────────────────
 
     communicate(lexemeLabel, msg) {
@@ -143,7 +160,8 @@ class WebRequestSdk {
 
     // ─── Request / subscribe ──────────────────────────────────────────────────
 
-    async request(lexemeLabel, msg, opLabel, options = { MAX_RESPONSE_TIME: 5000 }) {
+    async request(lexemeLabel, msg, opLabel, options = {}) {
+        const maxResponseTime = options.MAX_RESPONSE_TIME ?? 5000;
         return new Promise((resolve, reject) => {
             this._waitForConnection(async () => {
                 if (this._socketState !== 1) return reject({ message: "Socket not connected" });
@@ -152,24 +170,29 @@ class WebRequestSdk {
 
                 this.eventInterface.on("incoming-msg",  m => { if (m.op === opLabel && m.result != null) resolve(m); });
                 this.eventInterface.on("agent-error",   m => { if (m.op === opLabel && m.error  != null) reject(m); });
-                setTimeout(() => reject({ message: `No response in ${options.MAX_RESPONSE_TIME / 1000}s` }), options.MAX_RESPONSE_TIME);
+                setTimeout(() => reject({ message: `No response in ${maxResponseTime / 1000}s` }), maxResponseTime);
             });
         });
     }
 
-    async webrequest(interfaceAddr, requestMsg, options = { MAX_RESPONSE_TIME: 5000 }) {
+    async webrequest(interfaceAddr, requestMsg, options = {}) {
+        if (!interfaceAddr) return Promise.reject({ error: "No interface provided" });
+
+        const isReceptive  = interfaceAddr.includes(":::");
+        const isExpressive = interfaceAddr.includes("|||");
+        if (!isReceptive && !isExpressive) return Promise.reject({ error: `Invalid interface "${interfaceAddr}"` });
+
+        const maxResponseTime = options.MAX_RESPONSE_TIME ?? 5000;
+        const opLabel = options.opLabel || interfaceAddr;
+        // _generateToken is async — must be awaited before entering the Promise
+        // constructor (which is synchronous). Without await, token would be a
+        // Promise object, sending a garbled token to the server.
+        const token = await this._generateToken(interfaceAddr);
+
         return new Promise((resolve, reject) => {
-            if (!interfaceAddr) return reject({ error: "No interface provided" });
-
-            const isReceptive  = interfaceAddr.includes(":::");
-            const isExpressive = interfaceAddr.includes("|||");
-            if (!isReceptive && !isExpressive) return reject({ error: `Invalid interface "${interfaceAddr}"` });
-
-            const opLabel = options.opLabel || interfaceAddr;
-
             const webMsg = isReceptive
-                ? { interface: interfaceAddr, request: requestMsg, token: this._generateToken(interfaceAddr), ttl: options.MAX_RESPONSE_TIME }
-                : { subscribe: interfaceAddr, token: this._generateToken(interfaceAddr) };
+                ? { interface: interfaceAddr, request: requestMsg, token, ttl: maxResponseTime }
+                : { subscribe: interfaceAddr, token };
 
             this.communicate("WebMessage", webMsg);
 
@@ -182,11 +205,11 @@ class WebRequestSdk {
                 if (msg.op === opLabel && msg.error != null) reject(msg);
             });
 
-            setTimeout(() => reject({ message: `No response in ${options.MAX_RESPONSE_TIME / 1000}s` }), options.MAX_RESPONSE_TIME);
+            setTimeout(() => reject({ message: `No response in ${maxResponseTime / 1000}s` }), maxResponseTime);
         });
     }
 
-    async websubscribe(interfaceAddr, localSocketName = "global", targetMsgLabel, options = { MAX_RESPONSE_TIME: 5000 }) {
+    async websubscribe(interfaceAddr, localSocketName = "global", targetMsgLabel, options = {}) {
         await this.webrequest(interfaceAddr, null, options);
 
         const localSocket = Muffin.PostOffice.sockets[localSocketName] || Muffin.PostOffice.sockets.global;
