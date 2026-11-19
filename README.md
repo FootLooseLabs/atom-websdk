@@ -16,13 +16,13 @@ essentials only; the docs site is the reference.
 **Browser (CDN)** — one script, pinned to a release:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/FootLooseLabs/atom-websdk@3.4.0/dist/sdk.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/FootLooseLabs/atom-websdk@3.4.2/dist/sdk.min.js"></script>
 ```
 
 **Node** (MCP servers, CLIs) — the request protocol alone, `@muffin/atom-websdk/core`, with no DOM and no Muffin:
 
 ```sh
-npm i github:FootLooseLabs/atom-websdk#v3.4.0
+npm i github:FootLooseLabs/atom-websdk#v3.4.2
 ```
 
 ```js
