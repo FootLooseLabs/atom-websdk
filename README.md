@@ -1,118 +1,84 @@
-# Atom WebSDK
+# @muffin/atom-websdk
 
-A real-time WebSocket SDK built on top of the [Element/Muffin framework](https://github.com/footLooseLabs/element), providing seamless WebSocket communication, event subscriptions, and interface-based messaging for modern web applications.
+The network layer of the [Muffin framework](https://github.com/FootLooseLabs/muffin-framework): a WebSocket client
+for the web interface (requests to services, subscriptions to their events), the `Service` base class, and the DOM
+extensions components use. The browser bundle includes [`@muffin/element`](https://github.com/FootLooseLabs/element);
+after loading it, everything is under `window.Muffin`.
 
-## Overview
+**Docs:** [footlooselabs.github.io/muffin-framework](https://footlooselabs.github.io/muffin-framework/) — the
+[WebRequestSdk API](https://footlooselabs.github.io/muffin-framework/api/web-request-sdk),
+[Service](https://footlooselabs.github.io/muffin-framework/api/service) and the
+[changelog](https://footlooselabs.github.io/muffin-framework/changelog). This README covers installing and the
+essentials only; the docs site is the reference.
 
-Atom WebSDK extends the [Element/Muffin framework](https://github.com/footLooseLabs/element) with enterprise-grade WebSocket capabilities:
+## Install
 
-- **Real-time Communication** - Bidirectional WebSocket messaging with automatic reconnection
-- **Interface-based Architecture** - Structured communication using lexicons and interfaces
-- **Event Subscription System** - Subscribe to server-side events with automatic handling
-- **Connection Management** - Built-in keep-alive, error handling, and state management
-- **Multi-environment Support** - Pre-configured endpoints for development and production
-- **Authentication Integration** - Token-based authentication with secure message signing
-
-## Quick Start
-
-### Installation
+**Browser (CDN)** — one script, pinned to a release:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/FootLooseLabs/atom-websdk@2.0.6/dist/sdk.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/FootLooseLabs/atom-websdk@3.4.0/dist/sdk.min.js"></script>
 ```
 
-### Basic Usage
+**Node** (MCP servers, CLIs) — the request protocol alone, `@muffin/atom-websdk/core`, with no DOM and no Muffin:
 
-```javascript
-// Initialize the WebSocket SDK
-const webSDK = new Muffin.WebRequestSdk({
-    name: "my-app-websocket",
-    client_id: "your-client-id",
-    token: "your-auth-token",
-    label: "sandbox_local"
+```sh
+npm i github:FootLooseLabs/atom-websdk#v3.4.0
+```
+
+```js
+const { RequestChannel } = require("@muffin/atom-websdk/core"); // or import, ESM; types included
+```
+
+## Requests
+
+```js
+const sdk = new Muffin.WebRequestSdk({ name: "app", client_id, token, config: { api_protocol: "wss://", hostName, path: "wsapi" } });
+await sdk.connect();
+
+// a service: "host:::Service"
+const reply = await sdk.webrequest("@vritti/ideator:::AgentDevelopmentService",
+    { subject: "getDetails", object: { slug } }, { MAX_RESPONSE_TIME: 10000 });
+reply.result;
+
+// its events: "host|||Name" — each delivered once per (socket, label) route, until webunsubscribe
+await sdk.websubscribe("@vritti/ideator|||AgentBroadcast", "global", "agent-broadcast");
+Muffin.PostOffice.sockets.global.on("agent-broadcast", (msg) => { /* … */ });
+await sdk.webunsubscribe("@vritti/ideator|||AgentBroadcast");
+```
+
+Any number of requests can be in flight at once, to any interface: each carries a `ref` and its reply is matched by it
+([Requests and replies](https://footlooselabs.github.io/muffin-framework/api/web-request-sdk#requests-and-replies)).
+A request resolves with its reply, and rejects with the reply when it carries an error, or with `{ message }` when no
+reply came in time or the connection closed.
+
+## Node: RequestChannel
+
+`RequestChannel` is the protocol the browser SDK is built on. A Node client gives it a way to send a frame and feeds
+it every message that arrives; it matches requests to replies:
+
+```js
+const channel = new RequestChannel({
+    send: (text) => socket.send(text),                                        // throws when not open
+    digest: (text) => createHash("sha256").update(text).digest("hex"),        // the request's token
 });
+socket.on("message", (data) => { try { channel.receive(JSON.parse(data)); } catch (e) {} });
+socket.on("close", () => channel.close());
 
-// Connect and make requests
-await webSDK.connect();
-
-const response = await webSDK.webrequest(
-    "UserService:::getProfile",
-    { userId: 123 },
-    { MAX_RESPONSE_TIME: 5000 }
-);
+const reply = await channel.request("@vritti/ideator:::AgentDevelopmentService", { subject: "getDetails" }, { timeout: 10000 });
 ```
 
-## Documentation
+## Develop
 
-- **[Getting Started](docs/getting-started.md)** - Installation and quick start guide
-- **[Core Features](docs/core-features.md)** - Request-response, interfaces, events, and connection management
-- **[Advanced Usage](docs/advanced-usage.md)** - Custom lexicons, callbacks, integration, and environment configuration
-- **[API Reference](docs/api-reference.md)** - Complete API documentation
-- **[Examples](docs/examples.md)** - Real-world implementation examples
-- **[Best Practices](docs/best-practices.md)** - Error handling, connection management, performance, and security
+In the [muffin-framework](https://github.com/FootLooseLabs/muffin-framework) workspace (pnpm):
 
-## Features
-
-### Request-Response Pattern
-
-```javascript
-const response = await webSDK.request(
-    "GetUserData",
-    { userId: 123 },
-    "USER_DATA_RESPONSE",
-    { MAX_RESPONSE_TIME: 10000 }
-);
+```sh
+pnpm --filter @muffin/atom-websdk run build   # dist/sdk.min.js (CDN), dist/sdk.esm.js, dist/core.cjs + core.d.cts
+pnpm --filter @muffin/atom-websdk test        # the request protocol and Service, in Node
+pnpm test                                     # the browser specs (Playwright), from the workspace root
 ```
 
-### Interface-based Communication
-
-```javascript
-// Receptive interface (request-response)
-const response = await webSDK.webrequest(
-    "UserService:::getProfile",
-    { userId: 123 },
-    { MAX_RESPONSE_TIME: 5000 }
-);
-
-// Expressive interface (subscription)
-await webSDK.webrequest("NotificationService|||userNotifications");
-```
-
-### Event Subscriptions
-
-```javascript
-await webSDK.websubscribe(
-    "ChatService|||roomMessages",
-    "chat-socket",
-    "new-chat-message"
-);
-
-const chatSocket = Muffin.PostOffice.sockets["chat-socket"];
-chatSocket.addListener("new-chat-message", (eventData) => {
-    console.log("New message:", eventData.result);
-});
-```
-
-## Browser Support
-
-- Modern browsers with WebSocket support
-- ES6+ features required (async/await, classes, modules)
-- Web Crypto API for token generation
-- Requires [Element/Muffin framework](https://github.com/footLooseLabs/element)
-
-## Architecture Benefits
-
-- **Real-time Capability**: Built-in WebSocket management with reconnection
-- **Type Safety**: Interface-based communication with structured lexicons
-- **Framework Integration**: Seamless integration with [Element/Muffin](https://github.com/footLooseLabs/element) components
-- **Scalable**: Supports multiple connections and event subscriptions
-- **Production Ready**: Error handling, authentication, and multi-environment support
-- **Lightweight**: Minimal overhead on top of Element/Muffin framework
+`dist/` is committed: the CDN serves it from the release tag.
 
 ## License
 
-Copyright © @Footloose Labs INC.
-
----
-
-Atom WebSDK extends the [Element/Muffin framework's](https://github.com/footLooseLabs/element) philosophy of lightweight, flexible architecture while adding enterprise-grade real-time communication capabilities.
+Copyright © Footloose Labs INC.

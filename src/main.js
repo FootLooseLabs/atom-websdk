@@ -1,5 +1,6 @@
 import WEB_MESSAGE_LEXICON from "./lexicon.js";
 import { Service } from "./service.js";
+import { RequestChannel } from "./request_channel.js";
 import { applyDOMExtensions, applyGlobalUtilities } from "./dom_extensions.js";
 
 const API_LEXICON = { ...WEB_MESSAGE_LEXICON };
@@ -43,18 +44,31 @@ class WebRequestSdk {
         this._connection   = null;
         this._socketState  = 0; // 0=disconnected 1=connected 2=connecting
         this._keepAliveTimer = null;
+        // requests and their replies, matched by ref (request_channel.js); one channel across reconnects
+        this._channel = new RequestChannel({
+            send: text => {
+                if (this._socketState !== 1 || !this._connection) throw new Error("Socket not connected");
+                this._connection.send(text);
+            },
+            digest: text => this._generateToken(text)
+        });
+        // where each subscription's events go: interface → the local PostOffice socket and label of each route
+        this._eventRoutes = new Map();
     }
 
     // ─── Connection ───────────────────────────────────────────────────────────
 
     async connect() {
-        this._eventSubscriptions = new Set();
         this._socketState = 2;
 
         return new Promise((resolve, reject) => {
             const url = `${this.config.api_protocol}${this.config.hostName}/${this.config.path}/${this.clientId}?auth=${this.token}`;
             this._connection = Muffin.PostOffice.addSocket(WebSocket, this.label, url);
             this._connection.autoRetryOnClose = false;
+            const socket = this._connection.socket;
+            // what waits on this socket is answered on it or not at all: when it ends, the channel lets go of it —
+            // unless a newer socket has already replaced it (that one's requests are not this one's)
+            const ended = () => { if (this._connection?.socket === socket) this._channel.close(); };
 
             this._connection.socket.onerror = ev => {
                 const msg = ev.target?.readyState === 3
@@ -63,6 +77,7 @@ class WebRequestSdk {
                 console.error("Muffin.WebRequestSdk onerror:", ev, msg);
                 this._cancelKeepAlive();
                 this._socketState = 0;
+                ended();
                 this.eventInterface.dispatchMessage("error", new Error(msg));
                 reject({ state: this._socketState, msg });
             };
@@ -79,19 +94,29 @@ class WebRequestSdk {
                 console.error("Muffin.WebRequestSdk onclose:", ev, msg);
                 this._cancelKeepAlive();
                 this._socketState = 0;
+                ended();
                 this.eventInterface.dispatchMessage("close", new Error(msg));
             };
 
             this._connection.socket.onmessage = ev => {
                 if (ev.data === "pong") return;
+                let msg;
                 try {
-                    const msg = JSON.parse(ev.data);
+                    msg = JSON.parse(ev.data);
+                } catch(e) {
+                    this.eventInterface.dispatchMessage("error", e);
+                    return;
+                }
+                // the request it answers, if any — then the events anyone listens to, as before
+                this._channel.receive(msg);
+                try {
                     if (msg.error) {
                         this.eventInterface.dispatchMessage("agent-error", msg);
                     } else {
                         this.eventInterface.dispatchMessage("incoming-msg", msg);
                         if (msg.op?.includes("EVENT:::")) {
                             this.eventInterface.dispatchMessage("incoming-event", msg);
+                            this._routeEvent(msg);
                         } else {
                             this.eventInterface.dispatchMessage("incoming-response", msg);
                         }
@@ -120,6 +145,7 @@ class WebRequestSdk {
     disconnect() {
         this._cancelKeepAlive();
         this._socketState = 0;
+        this._channel.close("The connection was closed");
         if (this._connection?.socket) {
             const { socket } = this._connection;
             // Remove framework handlers first so onclose doesn't trigger a
@@ -159,81 +185,68 @@ class WebRequestSdk {
     }
 
     // ─── Request / subscribe ──────────────────────────────────────────────────
+    // Every request goes through the channel (request_channel.js): it carries a ref, and its reply is matched by it —
+    // any number in flight to one interface, each answered with its own reply.
 
-    async request(lexemeLabel, msg, opLabel, options = {}) {
-        const maxResponseTime = options.MAX_RESPONSE_TIME ?? 5000;
-        return new Promise((resolve, reject) => {
-            this._waitForConnection(async () => {
-                if (this._socketState !== 1) return reject({ message: "Socket not connected" });
-                this.communicate(lexemeLabel, msg);
-                if (!opLabel) return resolve({ message: "Message sent. No opLabel provided." });
-
-                this.eventInterface.on("incoming-msg",  m => { if (m.op === opLabel && m.result != null) resolve(m); });
-                this.eventInterface.on("agent-error",   m => { if (m.op === opLabel && m.error  != null) reject(m); });
-                setTimeout(() => reject({ message: `No response in ${maxResponseTime / 1000}s` }), maxResponseTime);
-            });
-        });
-    }
-
+    /**
+     * Ask an interface: `interfaceAddr` "host:::Service" with a request message, or "host|||Name" to subscribe.
+     * Resolves with the reply ({ op, result, statusCode, … }); rejects with the reply when it carries an error, or
+     * with { message } (no reply in time, connection closed or not open).
+     * options: MAX_RESPONSE_TIME (ms, default 5000; also how long the gateway waits for the service).
+     */
     async webrequest(interfaceAddr, requestMsg, options = {}) {
         if (!interfaceAddr) return Promise.reject({ error: "No interface provided" });
-
-        const isReceptive  = interfaceAddr.includes(":::");
-        const isExpressive = interfaceAddr.includes("|||");
-        if (!isReceptive && !isExpressive) return Promise.reject({ error: `Invalid interface "${interfaceAddr}"` });
-
-        const maxResponseTime = options.MAX_RESPONSE_TIME ?? 5000;
-        const opLabel = options.opLabel || interfaceAddr;
-        // _generateToken is async — must be awaited before entering the Promise
-        // constructor (which is synchronous). Without await, token would be a
-        // Promise object, sending a garbled token to the server.
-        const token = await this._generateToken(interfaceAddr);
-
-        return new Promise((resolve, reject) => {
-            const webMsg = isReceptive
-                ? { interface: interfaceAddr, request: requestMsg, token, ttl: maxResponseTime }
-                : { subscribe: interfaceAddr, token };
-
-            this.communicate("WebMessage", webMsg);
-
-            this.eventInterface.on("incoming-msg", msg => {
-                if (isReceptive  && msg.op === opLabel && msg.result  != null) resolve(msg);
-                if (isExpressive && msg.op === opLabel && msg.statusCode === 2) resolve(msg);
-            });
-
-            this.eventInterface.on("agent-error", msg => {
-                if (msg.op === opLabel && msg.error != null) reject(msg);
-            });
-
-            setTimeout(() => reject({ message: `No response in ${maxResponseTime / 1000}s` }), maxResponseTime);
+        return this._channel.request(interfaceAddr, requestMsg ?? null, {
+            timeout: options.MAX_RESPONSE_TIME ?? 5000,
+            key: options.opLabel
         });
     }
 
+    /**
+     * `request(interfaceAddr, requestMsg, options)` — the same as webrequest.
+     * Deprecated form, kept working: `request(lexemeLabel, frame, opLabel?, options?)` — a lexicon frame
+     * ({ interface, request } or { subscribe }); without opLabel it is only sent (communicate), as it always was.
+     */
+    async request(target, msg, third, fourth) {
+        if (typeof target === "string" && (target.includes(":::") || target.includes("|||"))) {
+            return this.webrequest(target, msg, third ?? {});
+        }
+        if (!this.LEXICON[target] || msg == null || typeof msg !== "object") {
+            return Promise.reject({ error: `request: "${target}" is neither an interface address nor a lexeme` });
+        }
+        if (!third) {
+            this.communicate(target, msg);
+            return { message: "Message sent. No opLabel provided." };
+        }
+        return this.webrequest(msg.interface || msg.subscribe, msg.request ?? null, { ...(fourth ?? {}), opLabel: third });
+    }
+
+    /**
+     * Subscribe to "host|||Name": its events are dispatched on the PostOffice socket `localSocketName` (default
+     * "global") as `targetMsgLabel` (default the event's op). Subscribing again with the same socket and label adds
+     * nothing: each event is delivered once per route.
+     */
     async websubscribe(interfaceAddr, localSocketName = "global", targetMsgLabel, options = {}) {
         await this.webrequest(interfaceAddr, null, options);
-
-        const localSocket = Muffin.PostOffice.sockets[localSocketName] || Muffin.PostOffice.sockets.global;
-
-        this.eventInterface.on("incoming-event", msg => {
-            if (msg.op === `EVENT:::${interfaceAddr}`) {
-                localSocket.dispatchMessage(targetMsgLabel || msg.op, msg);
-            }
-        });
-
+        let routes = this._eventRoutes.get(interfaceAddr);
+        if (!routes) this._eventRoutes.set(interfaceAddr, (routes = new Map()));
+        routes.set(`${localSocketName}\u0000${targetMsgLabel ?? ""}`, { localSocketName, targetMsgLabel });
         return true;
     }
 
-    _waitForConnection(callback) {
-        setTimeout(async () => {
-            if (this._socketState === 1) {
-                callback();
-            } else if (this._socketState === 0) {
-                try { await this.connect(); } catch(e) { console.error("Muffin.WebRequestSdk: connect failed —", e); }
-                this._waitForConnection(callback);
-            } else {
-                this._waitForConnection(callback);
-            }
-        }, 1000);
+    /** End a subscription: the gateway stops its events, and none are routed any more. Resolves with its acknowledgement. */
+    async webunsubscribe(interfaceAddr, options = {}) {
+        this._eventRoutes.delete(interfaceAddr);
+        return this._channel.unsubscribe(interfaceAddr, { timeout: options.MAX_RESPONSE_TIME ?? 5000 });
+    }
+
+    _routeEvent(msg) {
+        const routes = this._eventRoutes.get(msg.op.slice("EVENT:::".length));
+        if (!routes) return;
+        for (const { localSocketName, targetMsgLabel } of routes.values()) {
+            const localSocket = Muffin.PostOffice.sockets[localSocketName] || Muffin.PostOffice.sockets.global;
+            localSocket.dispatchMessage(targetMsgLabel || msg.op, msg);
+        }
     }
 
     // ─── Token ────────────────────────────────────────────────────────────────

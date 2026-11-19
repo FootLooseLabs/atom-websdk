@@ -37,6 +37,15 @@ export default [
         plugins: [...plugins, isProd && terser()].filter(Boolean)
     },
 
+    // CommonJS — the request protocol alone (@muffin/atom-websdk/core), for Node clients compiled to CommonJS
+    {
+        input: 'src/core.js',
+        output: {
+            file: 'dist/core.cjs', format: 'cjs', exports: 'named',
+            banner: `/*!\n * @muffin/atom-websdk/core v${process.env.npm_package_version}\n * Footloose Labs — ${new Date().getFullYear()}\n */`
+        }
+    },
+
     // ESM — for bundler use (Vite projects that import the SDK as a module)
     // @muffin/element is marked external — consumer controls that dependency.
     {

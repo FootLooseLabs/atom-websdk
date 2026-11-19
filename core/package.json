@@ -1,0 +1,6 @@
+{
+  "//": "@muffin/atom-websdk/core for resolvers that do not read package.json exports (TypeScript moduleResolution node)",
+  "main": "../dist/core.cjs",
+  "module": "../src/core.js",
+  "types": "../dist/core.d.cts"
+}
