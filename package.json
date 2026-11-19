@@ -1,6 +1,6 @@
 {
   "name": "@muffin/atom-websdk",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "description": "WebSocket SDK layer for the Muffin framework.",
   "main": "src/main.js",
   "module": "dist/sdk.esm.js",
@@ -34,7 +34,7 @@
     "test": "node --test test/"
   },
   "author": "footloose.io",
-  "license": "Copyright \u00a9 Footloose Labs INC.",
+  "license": "Copyright © Footloose Labs INC.",
   "peerDependencies": {
     "@muffin/element": ">=0.11.0"
   },
@@ -44,7 +44,6 @@
     }
   },
   "devDependencies": {
-    "@muffin/element": "workspace:*",
     "@rollup/plugin-commonjs": "^25.0.0",
     "@rollup/plugin-node-resolve": "^15.0.0",
     "@rollup/plugin-replace": "^5.0.0",

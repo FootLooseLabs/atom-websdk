@@ -1,5 +1,5 @@
 /*!
- * @muffin/atom-websdk/core v3.4.0
+ * @muffin/atom-websdk/core v3.4.1
  * Footloose Labs — 2026
  */
 'use strict';
