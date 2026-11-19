@@ -44,10 +44,11 @@ class WebRequestSdk {
         this._connection   = null;
         this._socketState  = 0; // 0=disconnected 1=connected 2=connecting
         this._keepAliveTimer = null;
+        this._connecting   = null; // the connection being opened, shared by every connect() meanwhile
         // requests and their replies, matched by ref (request_channel.js); one channel across reconnects
         this._channel = new RequestChannel({
             send: text => {
-                if (this._socketState !== 1 || !this._connection) throw new Error("Socket not connected");
+                if (this._connection?.socket?.readyState !== WebSocket.OPEN) throw new Error("Socket not connected");
                 this._connection.send(text);
             },
             digest: text => this._generateToken(text)
@@ -58,7 +59,18 @@ class WebRequestSdk {
 
     // ─── Connection ───────────────────────────────────────────────────────────
 
-    async connect() {
+    /**
+     * Open the connection. Calls made while it is being opened share that one attempt: one socket, never two. Called
+     * when open, it opens a fresh one (as it always has).
+     */
+    connect() {
+        if (!this._connecting) {
+            this._connecting = this._open().finally(() => { this._connecting = null; });
+        }
+        return this._connecting;
+    }
+
+    _open() {
         this._socketState = 2;
 
         return new Promise((resolve, reject) => {
@@ -68,21 +80,25 @@ class WebRequestSdk {
             const socket = this._connection.socket;
             // what waits on this socket is answered on it or not at all: when it ends, the channel lets go of it —
             // unless a newer socket has already replaced it (that one's requests are not this one's)
-            const ended = () => { if (this._connection?.socket === socket) this._channel.close(); };
+            // a socket's events speak for the connection only while it is the connection's socket
+            const current = () => this._connection?.socket === socket;
+            const ended = () => { if (current()) this._channel.close(); };
 
             this._connection.socket.onerror = ev => {
                 const msg = ev.target?.readyState === 3
                     ? "Connection closed or could not be established"
                     : "Connection failed";
                 console.error("Muffin.WebRequestSdk onerror:", ev, msg);
+                reject({ state: 0, msg });
+                if (!current()) return;
                 this._cancelKeepAlive();
                 this._socketState = 0;
                 ended();
                 this.eventInterface.dispatchMessage("error", new Error(msg));
-                reject({ state: this._socketState, msg });
             };
 
             this._connection.socket.onopen = ev => {
+                if (!current()) { socket.close(1000, "Replaced"); return; }
                 this._startKeepAlive();
                 this._socketState = 1;
                 this.eventInterface.dispatchMessage("connect");
@@ -92,6 +108,7 @@ class WebRequestSdk {
             this._connection.socket.onclose = ev => {
                 const msg = "Connection closed by server or network lost";
                 console.error("Muffin.WebRequestSdk onclose:", ev, msg);
+                if (!current()) return;
                 this._cancelKeepAlive();
                 this._socketState = 0;
                 ended();
@@ -99,7 +116,7 @@ class WebRequestSdk {
             };
 
             this._connection.socket.onmessage = ev => {
-                if (ev.data === "pong") return;
+                if (ev.data === "pong" || !current()) return;
                 let msg;
                 try {
                     msg = JSON.parse(ev.data);
