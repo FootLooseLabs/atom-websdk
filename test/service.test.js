@@ -43,3 +43,10 @@ test("unlocking what is not held does nothing; a freed name is free at once", as
     await Service.lockSubscription("S");
     Service.unlockSubscription("S");
 });
+
+test("the cache's cleaner never keeps the runtime alive", async () => {
+    const { Service } = await import("../src/service.js");
+    class Kept extends Service { static name = "kept"; }
+    Kept.setCached("k", 1);
+    assert.equal(Kept._cacheCleanerInterval.hasRef(), false);
+});

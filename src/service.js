@@ -51,6 +51,8 @@ class Service {
                 if (expiry < now) this._cache.delete(key);
             }
         }, 30 * 1000);
+        // a timer for tidiness, not work: never what keeps a runtime alive (Node, a CLI on @muffin/atom-websdk/service)
+        this._cacheCleanerInterval.unref?.();
     }
 
     static getCached(key) {
