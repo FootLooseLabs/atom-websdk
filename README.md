@@ -16,13 +16,13 @@ essentials only; the docs site is the reference.
 **Browser (CDN)** — one script, pinned to a release:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/FootLooseLabs/atom-websdk@3.4.2/dist/sdk.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/FootLooseLabs/atom-websdk@3.5.0/dist/sdk.min.js"></script>
 ```
 
 **Node** (MCP servers, CLIs) — the request protocol alone, `@muffin/atom-websdk/core`, with no DOM and no Muffin:
 
 ```sh
-npm i github:FootLooseLabs/atom-websdk#v3.4.2
+npm i github:FootLooseLabs/atom-websdk#v3.5.0
 ```
 
 ```js
@@ -50,6 +50,27 @@ Any number of requests can be in flight at once, to any interface: each carries 
 ([Requests and replies](https://footlooselabs.github.io/muffin-framework/api/web-request-sdk#requests-and-replies)).
 A request resolves with its reply, and rejects with the reply when it carries an error, or with `{ message }` when no
 reply came in time or the connection closed.
+
+## Kept open
+
+```js
+const sdk = new Muffin.WebRequestSdk({ name: "app", client_id, token: () => signIn(), config, reconnect: true });
+await sdk.connect();                                         // kept open from now until disconnect()
+sdk.eventInterface.on("state", (state) => { /* idle · connecting · connected · reconnecting · offline */ });
+sdk.eventInterface.on("resumed", () => { /* open again, subscriptions made again: read what was missed */ });
+await sdk.webunsubscribe("@vritti/ideator|||AgentBroadcast", { socketName: "global", label: "agent-broadcast" }); // one route
+```
+
+With `reconnect` a closed connection is opened again — after a growing wait, at once when the page is shown or the
+device is back online — its subscriptions made again; `token` may be a function, asked on every connect
+([The connection](https://footlooselabs.github.io/muffin-framework/api/web-request-sdk#the-connection)).
+
+## Services, as a module
+
+```js
+import { Service } from "@muffin/atom-websdk/service";   // the same class as Muffin.Service; types included
+export default class AgentService extends Service { /* static methods, getCached/setCached */ }
+```
 
 ## Node: RequestChannel
 

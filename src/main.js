@@ -1,6 +1,7 @@
 import WEB_MESSAGE_LEXICON from "./lexicon.js";
 import { Service } from "./service.js";
 import { RequestChannel } from "./request_channel.js";
+import { KeepOpen } from "./keep_open.js";
 import { applyDOMExtensions, applyGlobalUtilities } from "./dom_extensions.js";
 
 const API_LEXICON = { ...WEB_MESSAGE_LEXICON };
@@ -24,12 +25,17 @@ class WebRequestSdk {
 
     constructor(options = {}, lazyload = true) {
         if (!window.Muffin) throw new Error("Muffin.WebRequestSdk: window.Muffin not found — load element first");
+        // the Muffin it was made in, kept: a page may load another SDK later, which replaces window.Muffin — this
+        // connection's sockets and events stay on its own PostOffice
+        this._muffin = window.Muffin;
 
-        this.eventInterface = Muffin.PostOffice.getOrCreateInterface("WebRequestSdk");
+        this.eventInterface = this._muffin.PostOffice.getOrCreateInterface("WebRequestSdk");
         this.LEXICON        = API_LEXICON;
         this.label          = options.name     || "sandbox_ws";
         this.clientId       = options.client_id || "";
-        this.token          = options.token     || "";
+        // the credential after `?auth=`: a value, or a function asked on every connect (a reconnect too) for it now
+        this._tokenSource   = typeof options.token === "function" ? options.token : null;
+        this.token          = this._tokenSource ? "" : (options.token || "");
         this.keepAliveTimeout = options.keepAliveTimeout || 60000;
 
         if (options.label) {
@@ -55,6 +61,33 @@ class WebRequestSdk {
         });
         // where each subscription's events go: interface → the local PostOffice socket and label of each route
         this._eventRoutes = new Map();
+        // where the connection is (state, below); kept open when asked (keep_open.js)
+        this._state = "idle";
+        this._keepOpen = options.reconnect ? new KeepOpen(this, options.reconnect === true ? {} : options.reconnect) : null;
+    }
+
+    // ─── State ────────────────────────────────────────────────────────────────
+
+    /**
+     * Where the connection is: "idle" (not opened, or closed on purpose), "connecting" (being opened the first time),
+     * "connected", and with `reconnect` "reconnecting" (it closed; being opened again) or "offline" (waiting for the
+     * device to be online). Each change is dispatched as `state`.
+     */
+    get state() { return this._state; }
+
+    /** Whether it is open now. */
+    get connected() { return this._socketState === 1; }
+
+    _setState(state) {
+        if (state === this._state) return;
+        this._state = state;
+        this.eventInterface.dispatchMessage("state", state);
+    }
+
+    /** Closed or failed: kept open, opened again (keep_open.js); else idle. */
+    _lost() {
+        if (this._keepOpen?.kept) this._keepOpen.lost();
+        else this._setState("idle");
     }
 
     // ─── Connection ───────────────────────────────────────────────────────────
@@ -64,18 +97,30 @@ class WebRequestSdk {
      * when open, it opens a fresh one (as it always has).
      */
     connect() {
+        this._keepOpen?.start();
         if (!this._connecting) {
             this._connecting = this._open().finally(() => { this._connecting = null; });
         }
         return this._connecting;
     }
 
-    _open() {
+    async _open() {
         this._socketState = 2;
+        if (this._state !== "reconnecting" && this._state !== "offline") this._setState("connecting");
+        else this._setState("reconnecting");
+        if (this._tokenSource) {
+            try {
+                this.token = await this._tokenSource();
+            } catch (e) {
+                this._socketState = 0;
+                this._lost();
+                throw { state: 0, msg: `No credential to connect with: ${e?.message ?? e}` };
+            }
+        }
 
         return new Promise((resolve, reject) => {
             const url = `${this.config.api_protocol}${this.config.hostName}/${this.config.path}/${this.clientId}?auth=${this.token}`;
-            this._connection = Muffin.PostOffice.addSocket(WebSocket, this.label, url);
+            this._connection = this._muffin.PostOffice.addSocket(WebSocket, this.label, url);
             this._connection.autoRetryOnClose = false;
             const socket = this._connection.socket;
             // what waits on this socket is answered on it or not at all: when it ends, the channel lets go of it —
@@ -95,24 +140,29 @@ class WebRequestSdk {
                 this._socketState = 0;
                 ended();
                 this.eventInterface.dispatchMessage("error", new Error(msg));
+                this._lost();
             };
 
             this._connection.socket.onopen = ev => {
                 if (!current()) { socket.close(1000, "Replaced"); return; }
                 this._startKeepAlive();
                 this._socketState = 1;
+                this._setState("connected");
                 this.eventInterface.dispatchMessage("connect");
                 resolve({ state: this._socketState, msg: "connection established" });
+                this._keepOpen?.opened();
             };
 
             this._connection.socket.onclose = ev => {
                 const msg = "Connection closed by server or network lost";
                 console.error("Muffin.WebRequestSdk onclose:", ev, msg);
+                reject({ state: 0, msg });   // closed before it opened (nothing when it had opened)
                 if (!current()) return;
                 this._cancelKeepAlive();
                 this._socketState = 0;
                 ended();
                 this.eventInterface.dispatchMessage("close", new Error(msg));
+                this._lost();
             };
 
             this._connection.socket.onmessage = ev => {
@@ -160,6 +210,8 @@ class WebRequestSdk {
     }
 
     disconnect() {
+        this._keepOpen?.stop();
+        this._setState("idle");
         this._cancelKeepAlive();
         this._socketState = 0;
         this._channel.close("The connection was closed");
@@ -251,17 +303,38 @@ class WebRequestSdk {
         return true;
     }
 
-    /** End a subscription: the gateway stops its events, and none are routed any more. Resolves with its acknowledgement. */
+    /**
+     * End a subscription. With `socketName` and `label` (as websubscribe was given them), only that route ends; the
+     * gateway is told when it was the last — until then the others go on. Without them, every route. Resolves with
+     * the gateway's acknowledgement, or `{ statusCode: 200, kept: true }` when other routes keep it.
+     */
     async webunsubscribe(interfaceAddr, options = {}) {
+        const routes = this._eventRoutes.get(interfaceAddr);
+        if (routes && (options.socketName !== undefined || options.label !== undefined)) {
+            routes.delete(`${options.socketName ?? "global"}\u0000${options.label ?? ""}`);
+            if (routes.size) return { statusCode: 200, kept: true };
+        }
         this._eventRoutes.delete(interfaceAddr);
         return this._channel.unsubscribe(interfaceAddr, { timeout: options.MAX_RESPONSE_TIME ?? 5000 });
+    }
+
+    /** Open again: every subscription still routed is made again at the gateway (a new socket starts with none). */
+    async _subscribeAgain() {
+        for (const interfaceAddr of [...this._eventRoutes.keys()]) {
+            try {
+                await this.webrequest(interfaceAddr, null);
+            } catch (e) {
+                this.eventInterface.dispatchMessage("error", new Error(`Could not subscribe again to ${interfaceAddr}: ${e?.error ?? e?.message ?? e}`));
+            }
+        }
     }
 
     _routeEvent(msg) {
         const routes = this._eventRoutes.get(msg.op.slice("EVENT:::".length));
         if (!routes) return;
         for (const { localSocketName, targetMsgLabel } of routes.values()) {
-            const localSocket = Muffin.PostOffice.sockets[localSocketName] || Muffin.PostOffice.sockets.global;
+            const { sockets } = this._muffin.PostOffice;
+            const localSocket = sockets[localSocketName] || sockets.global;
             localSocket.dispatchMessage(targetMsgLabel || msg.op, msg);
         }
     }
